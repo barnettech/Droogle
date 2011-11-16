@@ -1,0 +1,29 @@
+/*DROOGLE icons below*/
+.pdf {
+    display:inline-block;
+    padding-left:20px;
+    line-height:18px;
+    background:transparent url(/sites/all/themes/babson_discussions/images/google_icons/page_white_acrobat.png) center left no-repeat;
+}
+.png {
+    display:inline-block;
+    padding-left:20px;
+    line-height:18px;
+    background:transparent url(/sites/all/themes/babson_discussions/images/google_icons/picture.png) center left no-repeat;
+}
+
+.xls {
+    display:inline-block;
+    padding-left:20px;
+    line-height:18px;
+    background:transparent url(/sites/all/themes/babson_discussions/images/google_icons/page_white_excel.png) center left no-repeat;
+}
+.doc {
+    display:inline-block;
+    padding-left:20px;
+    line-height:18px;
+    background:transparent url(/sites/all/themes/babson_discussions/images/google_icons/generic_text.png) center left no-repeat;
+}
+
+
+/*END DROOGLE icons*/

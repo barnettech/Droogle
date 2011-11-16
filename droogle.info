@@ -1,0 +1,5 @@
+; $Id$
+name = Droogle 
+description = Babson developed module to interract with google apps.
+package = Babson Development
+core = 6.x

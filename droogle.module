@@ -1,0 +1,507 @@
+<?php
+
+/**
+ * A module to integrate google apps with Drupal
+ * Look at the commented out drupal_set_message statements which serve as comments and debug if
+ * you are learning your way around the code
+ * Created by:  James Barnett, Babson College 2011
+ *
+ */
+
+/**
+ * Valid permissions for this module
+ * @return array An array of valid permissions for the droogle module
+ */
+function droogle_perm() {
+ return array('use google apps',
+               'administer google apps',
+               'administer droogle'); 
+}
+
+function droogle_help($path, $arg) {
+ $output = '';
+ switch ($path) {
+  case "admin/help#droogle":
+   $output = '<p>'.  t("Google Apps integrations for Drupal -- to interract with google docs") .'</p>';
+   break;
+  case "admin/settings/droogle":
+   $output = t(<<<END
+        <p>Droogle does for Drupal what BBoogle does for Blackboard.  We integrate Drupal with google apps and other Google applications.</p>
+END
+   );
+   break;
+ }
+ return $output;
+} // function droogle_help
+
+function droogle_menu() {
+ $droogle_title_text = variable_get('droogle_title_text');
+ if (!$droogle_title_text) {
+  $droogle_title_text = "DROOGLE:  A list of your google docs";
+ }
+ $items = array();
+ $items['droogle' ] = array(
+    'title' => $droogle_title_text,
+    'page callback' => 'droogle_hello',
+    'access arguments' => array('access content'),
+ );
+ $items['admin/settings/droogle'] = array(
+    'title' => t('Droogle Settings'),
+    'description' => 'Configuration of who can upload to google docs from an OG droogle block',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('droogle_settings_form'),
+    'access arguments' => array('administer droogle'),
+ );
+
+ return $items;
+}
+
+/*
+ * uses the form api
+ */
+function droogle_settings_form(&$form_state, $edit = array()) {
+ global $user;
+ $allowed = variable_get('droogle_upload');
+ $droogle_user = variable_get('droogle_user');
+ $droogle_title_text = variable_get('droogle_title_text');
+ $droogle_password = variable_get('droogle_password');
+ $droogle_og_password = variable_get('droogle_og_password');
+ $role_names = user_roles();
+
+ //drupal_set_message('<pre>'. print_r($role_names, TRUE) . '</pre>');
+ $form['uploads'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Settings controlling file uploads to Google from Drupal'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+ );
+ $form['uploads']['permissions'] = array(
+    '#type' => 'checkboxes', 
+    '#title' => t('Check which roles are allowed to upload files to google docs'), 
+    '#default_value' => array_values($allowed),
+    '#options' => $role_names,
+    '#description' => t('Check the roles which can upload from drupal to google docs within a Droogle organic group block.'),
+ );
+ $form['sitewide_nonog'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Settings controlling the non Organic Groups context for Droogle'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+ );
+ $form['sitewide_nonog']['droogle_title_text'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Enter the title to put at the top of the droogle page (when not within an Organic Groups context)'),
+    '#default_value' => $droogle_title_text,
+    '#size' => 60,
+    '#maxlength' => 64,
+    '#description' => t('the non OG title of the droogle page, default is:  "DROOGLE: A list of your google docs"'),
+ );
+ $form['sitewide_nonog']['droogle_user'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Enter the google username to use (when not within an Organic Groups context)'),
+    '#default_value' => $droogle_user,
+    '#size' => 60,
+    '#maxlength' => 64,
+    '#description' => t('the non OG google user name'),
+ );
+ $form['sitewide_nonog']['droogle_password'] = array(
+    '#type' => 'password',
+    '#title' => t('Enter the google password to use (when not within an Organic Groups context)'),
+    '#default_value' => $droogle_password,
+    '#size' => 60,
+    '#maxlength' => 64,
+    '#description' => t('the non OG google password'),
+ );
+ $form['groups_sitewide'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Sitewide Organic Groups Options'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+ );
+ $form['groups_sitewide']['droogle_og_user'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Enter the "group" content types cck field machine name to use, sitewide, for Organic Groups, where the Google username will be entered to use (when within an Organic Groups context)  --  each Organic Group needs its own google username after all.'),
+    '#default_value' => variable_get('droogle_og_cck_user'),
+    '#size' => 60,
+    '#maxlength' => 64,
+    '#description' => t('the OG google password'),
+ );
+ $form['groups_sitewide']['droogle_og_password'] = array(
+    '#type' => 'password',
+    '#title' => t('Enter the sitewide Google Organic Groups password to use (when within an Organic Groups context)'),
+    '#default_value' => $droogle_og_password,
+    '#size' => 60,
+    '#maxlength' => 64,
+    '#description' => t('the sitewide OG google password, having a sitewide OG password can simplify sitewide OG management'),
+ );
+ $form['single_groups'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Overriding google username and password for individual Organic Group(s)'),
+    '#collapsible' => TRUE,
+    '#collapsed' => TRUE,
+ );
+ $form['single_groups']['particular_cck_field_password'] = array(
+    '#type' => 'password',
+    '#title' => t('Enter the "group" content types cck field machine name to use to override a particular groups google password -- this is optional and if the field is left empty when configuring a particular group, the global Droogle organic groups settings will be followed)'),
+    '#size' => 60,
+    '#maxlength' => 64,
+    '#description' => t('the OG group cck field to use to set a particular OG droogle password -- you will have to setup a new cck field for the "group" content type matching the machine name set on this page'),
+ );
+ $form['submit' ] = array('#type' => 'submit', '#value' => t('Save'));
+ return $form;
+}
+
+function droogle_settings_form_submit($form, &$form_state) {
+ drupal_get_messages('status');
+ $response = "";
+ //drupal_set_message('<pre>'.print_r($form_state,TRUE).'</pre>');
+ variable_set('droogle_upload', $form_state['values']['permissions']);
+ variable_set('droogle_user', $form_state['values']['droogle_user']);
+ if ($form_state['values']['sitewide_nonog']['droogle_password']) {
+  variable_set('droogle_password', $form_state['values']['droogle_password']);
+ }
+ if ($form_state['values']['droogle_og_password']) {
+  variable_set('droogle_og_password', $form_state['values']['droogle_og_password']);
+ }
+ if ($form_state['values']['droogle_og_user']) {
+  variable_set('droogle_og_cck_user', $form_state['values']['droogle_og_user']);
+ }
+ if ($form_state['values']['particular_cck_field_password']) {
+  variable_set('droogle_og_cck_field_password', $form_state['values']['particular_cck_field_password']);
+ }
+ variable_set('droogle_title_text', $form_state['values']['droogle_title_text']);
+ //drupal_set_message('<pre>' . print_r($form_state['values']['permissions'], TRUE) . '</pre> &nbsp; will be allowed to upload');
+ drupal_set_message('Your form has been successfully submitted');
+}
+
+function droogle_hello($reset = FALSE) {
+ global $user;
+ static $content;
+ $currentGroup = og_get_group_context();
+ $group_google_user_cck = variable_get('droogle_og_cck_user');
+ module_load_include('inc', 'droogle', 'appsapis');  //this loads up all the PHP wrappers to interract with Google Docs.
+ drupal_add_css(drupal_get_path('module', 'droogle') .'/css/droogle.css');
+ if ($currentGroup->nid) {
+  /*
+   * if inside this if statment we're on an organic group page and we'll display the groups documents
+   * right now it is using the blackboard id from Babson's custom cck field.  You also need to put documents for display inside of a
+   * folder (a collection) within google docs within this OG user account using the same name for the collection as the user name but
+   * without the domain at the end.  So if the organic group user in google docs is user@babson.edu you need to make a collection (a folder)
+   * called "user" and then put all the document to list within DROOGLE in this folder.
+   * TODO:  support multiple folders?
+   */
+  $cache_key = 'droogle_data:' . $currentGroup->nid;}
+  else{
+   $cache_key = 'droogle_data';
+  }
+  if ($currentGroup->nid) {
+   if (!isset($content) || $reset) {
+    if (!$reset && ($cache = cache_get($cache_key)) && !empty($cache->data)) {
+     //drupal_set_message('getting cached data');
+     $content = $cache->data;
+    }
+    else{
+     $path = $path . '/library';
+     $content = "";
+     try{
+      $time_start = microtime_float();
+      //http://php.net/manual/en/language.variables.variable.php on resolving the ambiguity of using a variable as part of an array for below line
+      $googleuser = $currentGroup->{$group_google_user_cck}[0]['value'] . '@babson.edu';
+      $collectionName = $currentGroup->{$group_google_user_cck}[0]['value'];
+      $droogle_particular_og_password_cck_field = variable_get('droogle_og_cck_field_password');
+      if ($droogle_particular_og_password_cck_field) {
+       $droogle_og_password = $currentGroup->{$droogle_particular_og_password_cck_field}[0]['value'];
+      }
+      else{
+       $droogle_og_password = variable_get('droogle_og_password');
+      }
+      $googlepassword = $droogle_og_password;  //the group password for all group users, hardcoded for now
+      $TheCollectionId = getACollectionId($googleuser, $googlepassword, $collectionName);
+      //drupal_set_message($TheCollectionId);
+      $collectionDocs = printCollection2($googleuser, $googlepassword, $TheCollectionId);
+      $time_end = microtime_float();
+      $time = $time_end - $time_start;
+     }catch (Exception $e) {
+      watchdog("DROOGLE", "Error: Unable to process for the group nid " . $currentGroup->nid . " " . $e->getMessage());
+     }
+     //this lists content from a collection
+     if ($collectionDocs) {
+      $content .= $collectionDocs;
+     }
+     else{
+      $content .= 'The group has no google docs presently';
+     }
+
+     //addPermission();
+     //drupal_set_message('caching the data');
+     cache_set($cache_key, $content, 'cache', 'CACHE_TEMPORARY');
+    }
+    $permissions = variable_get('droogle_upload', NULL);
+    $haspermission = FALSE;
+    foreach ($permissions as $key => $value) {
+     if (in_array($value, array_keys($user->roles))) {
+      //drupal_set_message($value.' was in the array');
+      $haspermission = TRUE;
+     }
+    }
+    if ($haspermission) {
+     // Do something.
+     $content .= drupal_get_form('google_upload_form');
+    }
+   }
+   return $content;
+  }
+  else{
+   /*
+    * if not using organic groups this page is available at /droogle and will just display all the documents from the google user
+    * configured at /admin/settings/droogle_settings
+    */
+   if (!isset($content) || $reset) {
+    if (!$reset && ($cache = cache_get($cache_key)) && !empty($cache->data)) {
+     //drupal_set_message('getting cached data');
+     $content = $cache->data;
+    }
+    else{
+     $content = "";
+     //the below commented out code just lists all documents for the user
+     try {
+      $droogle_user = variable_get('droogle_user');
+      $droogle_password = variable_get('droogle_password');
+      $client = getClientLoginHttpClient($droogle_user, $droogle_password);
+      //drupal_set_message('got here after the try statement');
+      $docs = new Zend_Gdata_Docs($client);
+      $feed = $docs->getDocumentListFeed('https://docs.google.com/feeds/documents/private/full');
+      //$collection_id = '0B-a-StXYm5kcNDEwZGQ2ZWItZGY2YS00YTk0LWIxYTUtMGJhZGRjNjU1NDA3';
+      //$feed = $docs->getDocumentListFeed("https://docs.google.com//feeds/default/private/full/folder%3A" . $collection_id . "/contents");
+      $content = printDocumentsFeed($feed, TRUE);
+
+      cache_set($cache_key, $content, 'cache', 'CACHE_TEMPORARY');
+
+     } catch (Exception $e) {
+      drupal_set_message("Error: Unable to authenticate. Please check your credentials.\n" . check_plain($e->getMessage()));
+      //echo phpinfo();
+
+     }
+    }
+   }
+   $permissions = variable_get('droogle_upload', NULL);
+
+
+   $haspermission = FALSE;
+   foreach ($permissions as $key => $value) {
+    if (in_array($value, array_keys($user->roles))) {
+     $haspermission = TRUE;
+    }
+   }
+   if ($haspermission) {
+    $content .= drupal_get_form('google_upload_form');
+   }
+   return $content; // . ' ' .$time;  //12.79 without theme function & 22 with the theme functon and like 23 with the whole loop in the theme function
+  }
+}
+
+
+
+function google_upload_form() {
+ // create an empty form array
+ $form = array();
+
+ // set the form encoding type
+ $form['#attributes']['enctype'] = "multipart/form-data";
+
+ // add a file upload file
+ $form['upload'] = array(
+    '#type' => 'file',
+    '#title' => t('Upload a file to Google'),
+ );
+
+ // add a submit button
+ $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+ );
+ return $form;
+}
+
+function google_upload_form_validate($form, &$form_state) {
+ if ($currentGroup->nid) {
+  $droogle_password = variable_get('droogle_og_password');
+  $droogle_user = $currentGroup->{$group_google_user_cck}[0]['value'] . '@babson.edu';
+ }
+ else{
+  $droogle_user = variable_get('droogle_user');
+  $droogle_password = variable_get('droogle_password');
+ }
+ // define upload field name
+ // NOTE: this should match the name of your form file field
+ $fieldName = 'upload';
+
+ // If a file was uploaded, process it.
+ if (isset($_FILES['files']) && is_uploaded_file($_FILES['files']['tmp_name'][$fieldName])) {
+
+  // attempt to save the uploaded file
+  if ($file = file_save_upload($fieldName, file_directory_path())) {
+   //drupal_set_message("success:".$file->filepath);
+
+  }
+
+  // set error if file was not uploaded
+  if (!$file) {
+   form_set_error($fieldName, 'Error uploading file.');
+   return;
+  }
+
+  // set files to form_state, to process when form is submitted
+  $form_state['values']['file'] = $file;
+
+  $originalFileName = $file->filename;
+  $temporaryFileLocation = $file->filepath;
+  //drupal_set_message('original filename is '.$originalFileName);
+  //drupal_set_message('temp file is '.$temporaryFileLocation);
+
+  $client = getClientLoginHttpClient($droogle_user, $droogle_password);
+
+  $docs = new Zend_Gdata_Docs($client);
+
+  //$base_path = $_SERVER['DOCUMENT_ROOT'];
+  //$temporaryFileLocation = $base_path .'/'. file_directory_path();
+  //$temporaryFileLocation .= '/'.$originalFileName;
+  //drupal_set_message('temporaryFileLocation is '.$temporaryFileLocation);
+
+  $html = TRUE;
+
+
+  try{
+   $result = uploadDocument($droogle_user, $droogle_password, $docs, $html, $originalFileName, $file->filepath);
+   //drupal_set_message($result);
+  } catch (Exception $e) {
+   drupal_set_message("Error: Unable to upload your document\n" . check_plain($e->getMessage()));
+
+  }
+
+
+ }
+ else {
+  // set error
+  form_set_error($fieldName, 'Error uploading file.');
+  return;
+ }
+}
+
+function google_upload_form_submit($form, &$form_state) {
+ cache_clear_all('droogle_data', 'cache', TRUE);
+ drupal_set_message(t('File ' . check_plain($form_state['values']['file']->filename) . ' was upload to google docs'));
+
+
+}
+
+/**
+ * Implementation of hook_theme()
+ *    information on hook theme http://groups.drupal.org/node/14274#comment-57950
+ *    1. hook_theme which adds an array of callbacks and their arguments to the theme registry. I didn't realize that I had to visit the modules page to rebuild the theme registry before it would be added.
+ *    2. The themable function itself which starts with theme_ followed by the function name that was added to the registry with hook_theme
+ *    3. theme("whatever_function, $whatever_argument, $whatever_argument ") which actually calls the function.
+ */
+function droogle_theme() {
+ return array(
+      'droogle_list_docs' => array(
+      'arguments' => array('response' => NULL),
+ ),
+      'droogle_doc' => array(
+      'arguments' => array('file' => NULL),
+ ),
+ );
+}
+
+/**
+ * Implementation of hook_theme()
+ */
+function theme_droogle_doc($file) {
+ if (preg_match("/document/i", $file->content["type"] . $file->link[1]['href'])) {
+  $content .= "<div class='doc'>";
+ }
+ if (preg_match("/spreadsheet/i", $file->content["type"] . $file->link[1]['href'])) {
+  $content .= "<div class='xls'>";
+ }
+ if (preg_match("/pdf/i", $file->content["type"] . $file->link[1]['href'])) {
+  $content .= "<div class='pdf'>";
+ }
+ if (preg_match("/image/i", $file->content["type"] . $file->link[1]['href'])) {
+  //preg_match("/folder%3A(.*$)/i", $file->link[1]['href'], $matches);
+  //drupal_set_message($matches[0]);
+  $content .= "<div class='png'>";
+ }
+ $content .= '<a href="' . $file->link[1]['href'] . '" target="_blank>"' . $file->title . "</a></div><br />";
+ $content .= "Type: " . $file->content["type"] . "<br />";
+ $content .= "Author: " . $file->author->name . "<br />";
+ $content .= "Link: " . $file->link[1]['href'] . "<br />";
+ $content .= "Download: " . $file->content["src"] . "<br /><br />";
+
+ $output = $content;
+ return $output;
+}
+
+function theme_droogle_list_docs($response) {
+ foreach ($response->entry as $file) {
+  $thefileurl = "";
+  $content .= "";
+
+  if (preg_match("/document/i", $file->content["type"] . $file->link[1]['href'])) {
+   $content .= "<div class='doc'>";
+  }
+  if (preg_match("/spreadsheet/i", $file->content["type"] . $file->link[1]['href'])) {
+   $content .= "<div class='xls'>";
+  }
+  if (preg_match("/pdf/i", $file->content["type"] . $file->link[1]['href'])) {
+   $content .= "<div class='pdf'>";
+  }
+  if (preg_match("/image/i", $file->content["type"] . $file->link[1]['href'])) {
+   preg_match("/file%3A(.*$)/i", $file->id, $matches);
+   //drupal_set_message($matches[1]);
+   //drupal_set_message($file->id);
+   $thefileid = $matches[1];
+   $thefileurl = 'https://docs.google.com/a/babson.edu/leaf?id=' . $thefileid . '&hl=en_US';
+   $content .= "<div class='png'>";
+  }
+  if (!$thefileurl) {
+   $thefileurl = $file->link[1]['href'];
+  }
+  $content .= '<a href="' . $thefileurl . '" target="_blank>">' . $file->title . "</a></div><br />";
+  //$content .= "Type: " . $file->content["type"] . "<br />";
+  //$content .= " (" . $file->author->name . ")<br />";
+  //$content .= "Link: " . $thefileurl . "<br />";
+  //$content .= "Download: " . $file->content["src"] . "<br /><br />";
+ }
+ $output = $content;
+ return $output;
+}
+
+function droogle_block($op='list', $delta=array(), $edit=array()) {
+ switch ($op) {
+
+  case 'list':
+   $blocks[0]['info'] = t('Droogle Block');
+   return $blocks;
+   break;
+  case 'view':
+   switch ($delta) {
+    case 0:
+     $content = droogle_hello(FALSE);
+     //$currentGroup = og_get_group_context();
+     //$content .= 'Current group id' . $currentGroup->nid;
+     //$vid = $currentGroup->vid;
+     $blocks['subject'] = t('Group Google Docs');
+     $blocks['content'] = $content;
+     //return $blocks;
+     break;
+   }
+   return $blocks;
+
+
+ }
+}
+
+function microtime_float() {
+ list($usec, $sec) = explode(" ", microtime());
+ return ((float)$usec + (float)$sec);
+}
